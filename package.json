@@ -1,0 +1,73 @@
+{
+  "name": "lua-tools",
+  "displayName": "Lua Tools",
+  "publisher": "Denk",
+  "description": "Show luacheck reports, coverage by luacov.stats.out, check stylua formatting",
+  "version": "0.1.0",
+  "icon": "icon.png",
+  "engines": {
+    "vscode": "^1.5.0"
+  },
+  "categories": [
+    "Linters",
+    "Visualization",
+    "Other"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/d-enk/vscode-lua-tools.git"
+  },
+  "activationEvents": [
+    "onLanguage:lua",
+    "workspaceContains:*.lua",
+    "workspaceContains:*/*.lua",
+    "workspaceContains:*/*/*.lua"
+  ],
+  "contributes": {
+    "configuration": {
+      "type": "object",
+      "title": "Lua Tools",
+      "properties": {
+        "lua-tools.heckStyluaFormatting": {
+          "type": "boolean",
+          "default": true,
+          "description": "If true, checks that the file is formatted by stylua"
+        },
+        "lua-tools.useLuacheck": {
+          "type": "boolean",
+          "default": true,
+          "description": "If true, shows parsed luacheck response"
+        },
+        "lua-tools.filesWithCoverage": {
+          "type": "string",
+          "default": "luacov.stats.out",
+          "description": "Comma separated paths to files with coverage created by luatest --coverage"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "pretest": "npm run lint"
+  },
+  "main": "./src/extension",
+  "dependencies": {
+    "vscode-languageclient": "^2.6.3",
+    "vscode-languageserver": "^2.6.2",
+    "vscode-uri": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/mocha": "^2.2.32",
+    "@types/node": "^6.0.40",
+    "fs-extra": "^2.0.0",
+    "mocha": "^10.0.0",
+    "typescript": "^2.1.5",
+    "vscode": "^0.9.9"
+  },
+  "__metadata": {
+    "id": "e3061871-45a8-494d-9652-b8c4613a8819",
+    "publisherDisplayName": "Denk",
+    "publisherId": "940b129a-d3df-4e0e-ac25-d77abf1da20d",
+    "isPreReleaseVersion": false
+  }
+}
