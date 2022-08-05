@@ -46,7 +46,7 @@ connection.onDidChangeConfiguration((params) => {
       filesWithCoverage = conf.filesWithCoverage.split(",").map(file => workspaceRoot + "/" + file)
 
     if (conf.fullScanOnInit)
-  getLuaFiles(workspaceRoot).forEach(file => sendDiagnostics(file.path, parse_coverage()))
+      getLuaFiles(workspaceRoot).forEach(file => sendDiagnostics(file.path, parse_coverage()))
   }
 });
 connection.onDidChangeWatchedFiles(() => {
@@ -140,21 +140,22 @@ let sendStyLuaWarn = true;
 function check_stylua(documentUri, diagnostics) {
   const stylua = ch.spawnSync("stylua", ['-c', '--color=Never', vscode_uri.default.parse(documentUri).fsPath])
 
-  switch (stylua.status) {
-    case null:
-      if (sendStyLuaWarn) {
-        connection.window.showWarningMessage(`github.com/JohnnyMorganz/StyLua not installed. \n
-          Install it or disable this extension option.`)
-        sendStyLuaWarn = false
-      }
-      break
-    case 1:
-      diagnostics.push({
-        severity: 2,
-        range: { start: { line: 0 }, end: { line: 0 } },
-        source: "stylua",
-        message: "file not formatted",
-      })
+  if (stylua.pid == 0) {
+    if (sendStyLuaWarn) {
+      connection.window.showWarningMessage(`github.com/JohnnyMorganz/StyLua not installed. \n
+        Install it or disable this extension option.`)
+      sendStyLuaWarn = false
+    }
+    return diagnostics
+  }
+
+  if (stylua.status === 1) {
+    diagnostics.push({
+      severity: 2,
+      range: { start: { line: 0 }, end: { line: 0 } },
+      source: "stylua",
+      message: "file not formatted",
+    })
   }
 
   return diagnostics;
@@ -167,16 +168,17 @@ function luacheck(documentUri, diagnostics) {
     vscode_uri.default.parse(documentUri).fsPath, '--no-color', '--ranges', '--codes',
   ], {});
 
-  switch (cp.status) {
-    case null:
-      if (sendLuaCheckWarn) {
-        connection.window.showWarningMessage(`luacheck not installed. \n
-          Install it or disable this extension option.`)
-        sendLuaCheckWarn = false
-      }
-      break
-    default:
-      parseDiagnostics(cp.output.toString(), diagnostics);
+  if (cp.pid === 0) {
+    if (sendLuaCheckWarn) {
+      connection.window.showWarningMessage(`luacheck not installed. \n
+      Install it or disable this extension option.`)
+      sendLuaCheckWarn = false
+    }
+    return diagnostics
+  }
+
+  if (cp.output) {
+    parseDiagnostics(cp.output.toString(), diagnostics);
   }
   return diagnostics;
 }
