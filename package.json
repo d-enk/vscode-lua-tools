@@ -28,6 +28,11 @@
       "type": "object",
       "title": "Lua Tools",
       "properties": {
+        "lua-tools.fullScanOnInit": {
+          "type": "boolean",
+          "default": true,
+          "description": "If true, check all lua files on init"
+        },
         "lua-tools.heckStyluaFormatting": {
           "type": "boolean",
           "default": true,

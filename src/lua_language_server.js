@@ -44,9 +44,10 @@ connection.onDidChangeConfiguration((params) => {
 
     if (typeof conf.filesWithCoverage === 'string')
       filesWithCoverage = conf.filesWithCoverage.split(",").map(file => workspaceRoot + "/" + file)
-  }
 
+    if (conf.fullScanOnInit)
   getLuaFiles(workspaceRoot).forEach(file => sendDiagnostics(file.path, parse_coverage()))
+  }
 });
 connection.onDidChangeWatchedFiles(() => {
   documents.all().forEach(validateTextDocument);
