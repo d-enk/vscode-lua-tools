@@ -1,232 +1,241 @@
-'use strict';
-const vscode_languageserver = require("vscode-languageserver");
-const vscode_uri = require("vscode-uri");
-const ch = require('child_process');
+"use strict";
 
-const fs = require('fs');
+const vscode_languageserver = require("vscode-languageserver");
+const ch = require("child_process");
+const uri = require("vscode-uri").default;
+const fs = require("fs");
+
+const luacheckRegex = /^    (.*):(\d+):(\d+)-(\d+): \(([EW]?)(\d+)\) (.*)$/gm;
+const styluaRegex = /Diff in (.*):$/gm;
 
 let connection = vscode_languageserver.createConnection(
   new vscode_languageserver.IPCMessageReader(process),
-  new vscode_languageserver.IPCMessageWriter(process)
+  new vscode_languageserver.IPCMessageWriter(process),
 );
 let documents = new vscode_languageserver.TextDocuments();
 
 let workspaceRoot;
-let useLuacheck = false
-let heckStyluaFormatting = false
-let filesWithCoverage = []
+
+let useLuacheck = false;
+let checkStyluaFormatting = false;
+let filesWithCoverage = [];
+
+let coverage = new Map();
 
 connection.onInitialize((params) => {
   workspaceRoot = params.rootPath;
   return {
     capabilities: {
-
       // Tell the client that the server works in FULL text document sync mode
-      textDocumentSync: documents.syncKind
-    }
+      textDocumentSync: documents.syncKind,
+    },
   };
 });
+
+let initialCheckState = false;
+
+function initialCheck() {
+  if (initialCheckState) return;
+  initialCheckState = true;
+
+  let file2diagnostics = new Map();
+
+  function diagnosticsByFile(file) {
+    if (!file2diagnostics.has(file)) file2diagnostics.set(file, []);
+
+    return file2diagnostics.get(file);
+  }
+
+  for (const m of luacheck(workspaceRoot))
+    pushDiagnostic(diagnosticsByFile(m[1]), ...m.slice(2));
+
+  const p = stylua(workspaceRoot);
+  if (p.status === 1 && p.output)
+    for (const m of p.output.toString().matchAll(styluaRegex))
+      pushStyluaDiagnostic(diagnosticsByFile(m[1]));
+
+  file2diagnostics.forEach((diagnostics, file) =>
+    connection.sendDiagnostics({
+      uri: file,
+      diagnostics: diagnostics,
+    }),
+  );
+}
 
 // The settings have changed. Is send on server activation
 // as well.
 connection.onDidChangeConfiguration((params) => {
-  heckStyluaFormatting = false
-  useLuacheck = false
-  filesWithCoverage = []
+  checkStyluaFormatting = false;
+  useLuacheck = false;
+  filesWithCoverage = [];
 
-  const conf = params.settings["lua-tools"]
+  const conf = params.settings["lua-tools"];
+
   if (conf) {
-    if (conf.useLuacheck)
-      useLuacheck = true
+    useLuacheck = conf.useLuacheck;
+    checkStyluaFormatting = conf.checkStyluaFormatting;
 
-    if (conf.heckStyluaFormatting)
-      heckStyluaFormatting = true
+    if (typeof conf.filesWithCoverage === "string")
+      filesWithCoverage = conf.filesWithCoverage
+        .split(",")
+        .map((file) => "./" + file);
 
-    if (typeof conf.filesWithCoverage === 'string')
-      filesWithCoverage = conf.filesWithCoverage.split(",").map(file => workspaceRoot + "/" + file)
-
-    if (conf.fullScanOnInit)
-      getLuaFiles(workspaceRoot).forEach(file => sendDiagnostics(file.path, parse_coverage()))
+    if (conf.fullScanOnInit) initialCheck();
   }
 });
-connection.onDidChangeWatchedFiles(() => {
-  documents.all().forEach(validateTextDocument);
-});
-connection.onDidCloseTextDocument(() => {
-  documents.all().forEach(validateTextDocument);
-});
-connection.onDidSaveTextDocument(() => {
-  documents.all().forEach(validateTextDocument);
-});
 
-documents.onDidChangeContent((change) => {
-  validateTextDocument(change.document);
-});
-documents.onDidSave((e) => {
-  validateTextDocument(e.document);
+documents.onDidChangeContent((e) => {
+  sendDocumnetDiagnostics(e.document.uri);
 });
 
 documents.onDidOpen((e) => {
-  validateTextDocument(e.document);
+  parseCoverage();
+  sendDocumnetDiagnostics(e.document.uri);
 });
-documents.onDidClose((e) => {
-  validateTextDocument(e.document);
+
+documents.onDidSave((e) => {
+  parseCoverage();
+  sendDocumnetDiagnostics(e.document.uri);
+});
+
+// watch coverage changes
+connection.onDidChangeWatchedFiles((c) => {
+  parseCoverage();
+  documents.all().forEach((document) => sendDocumnetDiagnostics(document.uri));
 });
 
 documents.listen(connection);
 connection.listen();
 
-function validateTextDocument(textDocument) {
-  sendDiagnostics(textDocument.uri)
-}
+async function sendDocumnetDiagnostics(documentUri) {
+  const path = uri.parse(documentUri).path;
 
-async function sendDiagnostics(documentUri, map_with_coverage) {
   let diagnostics = [];
-  if (useLuacheck) {
-    diagnostics = luacheck(documentUri, diagnostics);
-  }
 
-  if (heckStyluaFormatting) {
-    diagnostics = check_stylua(documentUri, diagnostics);
-  }
+  luacheck(path).forEach((m) => pushDiagnostic(diagnostics, ...m.slice(2)));
 
-  diagnostics = coverage(documentUri, diagnostics, map_with_coverage);
+  if (stylua(path).status === 1) pushStyluaDiagnostic(diagnostics);
+
+  diagnostics = pushCoverage(path, diagnostics);
 
   connection.sendDiagnostics({ uri: documentUri, diagnostics: diagnostics });
 }
 
-function parse_coverage() {
-  let map = new Map();
+function parseCoverage() {
+  coverage.clear();
 
-  filesWithCoverage.forEach(luaCovStatsPath => {
+  filesWithCoverage.forEach((luaCovStatsPath) => {
     if (fs.existsSync(luaCovStatsPath)) {
-      const file = fs.readFileSync(luaCovStatsPath)
-      const items = file.toString().split('\n')
+      const file = fs.readFileSync(luaCovStatsPath);
+      const items = file.toString().split("\n");
 
       for (let i = 0; i < items.length; i += 2) {
-        const file_name = items[i].slice(items[i].indexOf(':') + 1)
-        map.set(file_name, items[i + 1])
+        const file_name = items[i].slice(items[i].indexOf(":") + 1);
+        coverage.set(file_name, items[i + 1]);
       }
     }
-  })
-
-  return map
+  });
 }
 
-function coverage(documentUri, diagnostics, map = parse_coverage()) {
-  const path = vscode_uri.default.parse(documentUri).fsPath
-  if (map.has(path)) {
-    const lines = map.get(path).trim().split(" ")
+function pushCoverage(path, diagnostics) {
+  const relative = path.substring(workspaceRoot.length + 1);
 
-    for (let l = 0; l < lines.length; l++) {
-      if (lines[l] != '0')
-        diagnostics.push({
-          severity: 4,
-          range: {
-            start: { line: l },
-            end: { line: l }
-          },
-          source: "coverage",
-          message: lines[l],
-        })
+  for (let p of ["./" + relative, relative, path]) {
+    if (coverage.has(p)) {
+      const lines = coverage.get(p).trim().split(" ");
+
+      for (let l = 0; l < lines.length; l++) {
+        if (lines[l] != "0")
+          diagnostics.push({
+            severity: 4,
+            range: {
+              start: { line: l },
+              end: { line: l },
+            },
+            source: "coverage",
+            message: lines[l],
+          });
+      }
+      break;
     }
   }
 
   return diagnostics;
+}
+
+function pushStyluaDiagnostic(diagnostics) {
+  diagnostics.push({
+    severity: 2,
+    range: { start: { line: 0 }, end: { line: 0 } },
+    source: "stylua",
+    message: "file not formatted",
+  });
 }
 
 let sendStyLuaWarn = true;
 
-function check_stylua(documentUri, diagnostics) {
-  const stylua = ch.spawnSync("stylua", ['-c', '--color=Never', vscode_uri.default.parse(documentUri).fsPath])
+function stylua(path) {
+  if (!checkStyluaFormatting) return {};
 
-  if (stylua.pid == 0) {
+  const p = ch.spawnSync("stylua", ["-c", "--color=Never", path]);
+
+  if (p.pid == 0) {
     if (sendStyLuaWarn) {
-      connection.window.showWarningMessage(`github.com/JohnnyMorganz/StyLua not installed. \n
-        Install it or disable this extension option.`)
-      sendStyLuaWarn = false
+      connection.window
+        .showWarningMessage(`github.com/JohnnyMorganz/StyLua not installed. \n
+        Install it or disable this extension option.`);
+      sendStyLuaWarn = false;
     }
-    return diagnostics
+    return {};
   }
 
-  if (stylua.status === 1) {
-    diagnostics.push({
-      severity: 2,
-      range: { start: { line: 0 }, end: { line: 0 } },
-      source: "stylua",
-      message: "file not formatted",
-    })
-  }
-
-  return diagnostics;
+  return p;
 }
 
-let sendLuaCheckWarn = true
+let sendLuaCheckWarn = true;
 
-function luacheck(documentUri, diagnostics) {
-  const cp = ch.spawnSync('luacheck', [
-    vscode_uri.default.parse(documentUri).fsPath, '--no-color', '--ranges', '--codes',
-  ], {});
+function luacheck(path) {
+  if (!useLuacheck) return [];
 
-  if (cp.pid === 0) {
+  const p = ch.spawnSync(
+    "/home/linuxbrew/.linuxbrew/bin/luacheck",
+    [path, "--no-color", "--ranges", "--codes", "-q"],
+    {},
+  );
+
+  if (p.pid === 0) {
     if (sendLuaCheckWarn) {
       connection.window.showWarningMessage(`luacheck not installed. \n
-      Install it or disable this extension option.`)
-      sendLuaCheckWarn = false
+      Install it or disable this extension option.`);
+      sendLuaCheckWarn = false;
     }
-    return diagnostics
+    return [];
   }
 
-  if (cp.output) {
-    parseDiagnostics(cp.output.toString(), diagnostics);
-  }
-  return diagnostics;
+  if (p.status !== 0 && p.output)
+    return p.output.toString().matchAll(luacheckRegex);
+
+  return [];
 }
 
-const errorRegex = /^.*:(\d+):(\d+)-(\d+): \(([EW]?)(\d+)\) (.*)$/mg;
+function pushDiagnostic(diagnostics, line, start, end, type, code, msg) {
+  line = Number(line) - 1;
 
-function parseDiagnostics(data, diagnostics) {
-  const matches = data.matchAll(errorRegex)
-  for (const m of matches) {
-    const [, lineStr, columnStr, endColumnStr, type, codeStr, message] = m;
-
-    const line = Number(lineStr) - 1;
-    const column = Number(columnStr) - 1;
-    const columnEnd = Number(endColumnStr);
-    const code = Number(codeStr);
-
-    let severity = 3 // info
-    switch (type) {
-      case 'E':
-        severity = 1; // error
-      case 'W':
-        severity = 2; // warn
-    }
-
-    diagnostics.push({
-      severity: severity,
-      range: {
-        start: { line: line, character: column },
-        end: { line: line, character: columnEnd }
-      },
-      source: "luacheck " + code,
-      message: message
-    });
+  let severity = 3; // info
+  switch (type) {
+    case "E":
+      severity = 1; // error
+    case "W":
+      severity = 2; // warn
   }
-  return diagnostics;
-}
 
-function getLuaFiles(path = "./") {
-  const entries = fs.readdirSync(path + '/', { withFileTypes: true });
-
-  const files = entries
-    .filter(file => !file.isDirectory())
-    .filter(file => file.name.endsWith(".lua"))
-    .map(file => ({ ...file, path: `${path}/${file.name}` }));
-
-  entries.filter(folder => folder.isDirectory())
-    // .filter(folder => !folder.name.startsWith("."))
-    .forEach(folder => files.push(...getLuaFiles(`${path}/${folder.name}`)))
-
-  return files;
+  diagnostics.push({
+    severity: severity,
+    range: {
+      start: { line: line, character: Number(start) - 1 },
+      end: { line: line, character: Number(end) },
+    },
+    source: "luacheck " + code,
+    message: msg,
+  });
 }

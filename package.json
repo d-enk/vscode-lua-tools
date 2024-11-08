@@ -3,7 +3,7 @@
   "displayName": "Lua Tools",
   "publisher": "Denk",
   "description": "Show luacheck reports, coverage by luacov.stats.out, check stylua formatting",
-  "version": "0.1.1",
+  "version": "0.2.1",
   "icon": "icon.png",
   "engines": {
     "vscode": "^1.5.0"
@@ -33,7 +33,7 @@
           "default": true,
           "description": "If true, check all lua files on init"
         },
-        "lua-tools.heckStyluaFormatting": {
+        "lua-tools.checkStyluaFormatting": {
           "type": "boolean",
           "default": false,
           "description": "If true, checks that the file is formatted by stylua"
