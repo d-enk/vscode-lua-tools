@@ -18,7 +18,7 @@ let workspaceRoot;
 
 let useLuacheck = false;
 let checkStyluaFormatting = false;
-let luacheckPath = "/home/linuxbrew/.linuxbrew/bin/luacheck";
+let luacheckPath = "luacheck";
 let styluaPath = "stylua";
 let filesWithCoverage = [];
 
@@ -69,7 +69,7 @@ function initialCheck() {
 connection.onDidChangeConfiguration((params) => {
   checkStyluaFormatting = false;
   useLuacheck = false;
-  luacheckPath = "/home/linuxbrew/.linuxbrew/bin/luacheck";
+  luacheckPath = "luacheck";
   styluaPath = "stylua";
   filesWithCoverage = [];
 
