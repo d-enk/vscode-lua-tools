@@ -3,7 +3,7 @@
   "displayName": "Lua Tools",
   "publisher": "Denk",
   "description": "Show luacheck reports, coverage by luacov.stats.out, check stylua formatting",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "icon": "icon.png",
   "engines": {
     "vscode": "^1.5.0"
