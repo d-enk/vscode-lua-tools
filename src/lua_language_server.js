@@ -18,6 +18,8 @@ let workspaceRoot;
 
 let useLuacheck = false;
 let checkStyluaFormatting = false;
+let luacheckPath = "luacheck";
+let styluaPath = "stylua";
 let filesWithCoverage = [];
 
 let coverage = new Map();
@@ -67,6 +69,8 @@ function initialCheck() {
 connection.onDidChangeConfiguration((params) => {
   checkStyluaFormatting = false;
   useLuacheck = false;
+  luacheckPath = "luacheck";
+  styluaPath = "stylua";
   filesWithCoverage = [];
 
   const conf = params.settings["lua-tools"];
@@ -74,6 +78,8 @@ connection.onDidChangeConfiguration((params) => {
   if (conf) {
     useLuacheck = conf.useLuacheck;
     checkStyluaFormatting = conf.checkStyluaFormatting;
+    luacheckPath = conf.luacheckPath;
+    styluaPath = conf.styluaPath;
 
     if (typeof conf.filesWithCoverage === "string")
       filesWithCoverage = conf.filesWithCoverage
@@ -177,13 +183,14 @@ let sendStyLuaWarn = true;
 function stylua(path) {
   if (!checkStyluaFormatting) return {};
 
-  const p = ch.spawnSync("stylua", ["-c", "--color=Never", path]);
+  const p = ch.spawnSync(styluaPath, ["-c", "--color=Never", path]);
 
   if (p.pid == 0) {
     if (sendStyLuaWarn) {
       connection.window
         .showWarningMessage(`github.com/JohnnyMorganz/StyLua not installed. \n
-        Install it or disable this extension option.`);
+        Install it or disable this extension option.\n
+        You can set stylua path as "lua-tools.luacheckPath".`);
       sendStyLuaWarn = false;
     }
     return {};
@@ -198,7 +205,7 @@ function luacheck(path) {
   if (!useLuacheck) return [];
 
   const p = ch.spawnSync(
-    "/home/linuxbrew/.linuxbrew/bin/luacheck",
+    luacheckPath,
     [path, "--no-color", "--ranges", "--codes", "-q"],
     {},
   );
@@ -206,7 +213,8 @@ function luacheck(path) {
   if (p.pid === 0) {
     if (sendLuaCheckWarn) {
       connection.window.showWarningMessage(`luacheck not installed. \n
-      Install it or disable this extension option.`);
+      Install it or disable this extension option.\n
+      You can set luacheck path as "lua-tools.luacheckPath".`);
       sendLuaCheckWarn = false;
     }
     return [];

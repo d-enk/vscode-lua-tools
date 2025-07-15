@@ -47,6 +47,16 @@
           "type": "string",
           "default": "luacov.stats.out",
           "description": "Comma separated paths to files with coverage created by luatest --coverage"
+        },
+        "lua-tools.luacheckPath": {
+          "type": "string",
+          "default": "luacheck",
+          "description": "Path to luacheck binary"
+        },
+        "lua-tools.styluaPath": {
+          "type": "string",
+          "default": "stylua",
+          "description": "Path to stylua binary"
         }
       }
     }
